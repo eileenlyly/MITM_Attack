@@ -139,7 +139,7 @@ public class HTTPSProxyEngine extends ProxyEngine
 		    m_tempRemoteHost = remoteHost;
 		    m_tempRemotePort = remotePort;
 
-		    X509Certificate java_cert = null;
+		    javax.security.cert.X509Certificate java_cert = null;
 		    SSLSocket remoteSocket = null;
 		    try {
 			//Lookup the "common name" field of the certificate from the remote server:
@@ -155,7 +155,15 @@ public class HTTPSProxyEngine extends ProxyEngine
 		    String serverCN = null;
 		    BigInteger serialno = null;
 		    // TODO: add in code to get the remote server's CN  and serial number from its cert.
-		    		    		    
+		    java_cert = (remoteSocket.getSession().getPeerCertificateChain())[0];
+		    serialno = java_cert.getSerialNumber();
+		    String remoteServerName = java_cert.getSubjectDN().getName();//It contains CN, OU, and a bunch of other things.
+		    Pattern p = Pattern.compile("CN=([^,]+), O=.*");
+		    final Matcher m = p.matcher(remoteServerName);
+		    if (m.find()) //we expect to find the pattern of course...
+		    	serverCN = m.group(1);
+		    else System.err.println("not finding patterns!");
+		    
 		    //We've already opened the socket, so might as well keep using it:
 		    m_proxySSLEngine.setRemoteSocket(remoteSocket);
 
