@@ -1,6 +1,3 @@
-/**
- * CS255 project 2
- */
 package mitm;
 
 import java.io.*;
