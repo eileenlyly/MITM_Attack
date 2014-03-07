@@ -1,7 +1,3 @@
-/*
- * CS255 Project 2, 2007 
- */
-
 package mitm;
 
 import java.io.FileWriter;
