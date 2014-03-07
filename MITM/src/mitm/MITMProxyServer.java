@@ -1,5 +1,5 @@
 /*
- * CSE 490K Project 2, 2007 
+ * CS255 Project 2, 2007 
  */
 
 package mitm;
@@ -88,7 +88,7 @@ public class MITMProxyServer
 		} else if (args[i].equals("-timeout")) {
 		    timeout = Integer.parseInt(args[++i]) * 1000;
 		} else if( args[i].equals("-pwdFile")) {
-			i++; // TODO parse this as needed
+			i++; // TODO(cs255): parse this as needed
 		} else if (args[i].equals("-adminPort")) {
 			adminPort = Integer.parseInt(args[++i]);
 		} else if (args[i].equals("-outputFile")) {

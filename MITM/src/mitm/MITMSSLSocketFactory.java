@@ -3,27 +3,34 @@
 
 package mitm;
 
+import iaik.asn1.structures.AlgorithmID;
+import iaik.x509.X509Certificate;
+
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.Principal;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.cert.Certificate;
-import java.security.cert.X509Certificate;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
+
 import javax.net.ServerSocketFactory;
 import javax.net.SocketFactory;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
-import java.math.BigInteger;
+import javax.net.ssl.X509TrustManager;
 
 
 /**
@@ -95,15 +102,77 @@ public final class MITMSSLSocketFactory implements MITMSocketFactory
     /**
      * This constructor will create an SSL server socket factory
      * that is initialized with a dynamically generated server certificate
-     * that contains the specified common name.
+     * that contains the specified Distinguished Name.
      */
-    public MITMSSLSocketFactory(String remoteCN, BigInteger serialno)
+    public MITMSSLSocketFactory(Principal serverDN, BigInteger serialNumber)
 	throws IOException,GeneralSecurityException, Exception
     {
-	// TODO: replace this with code to generate a new
-	// server certificate with common name remoteCN and serial number
-	// serialno
-	this();
+	// this();
+        // TODO(cs255): replace this with code to generate a new (forged) server certificate with a DN of serverDN
+        //   and a serial number of serialNumber.
+
+	// You may find it useful to work from the comment skeleton below.
+        
+	final String keyStoreFile = System.getProperty(JSSEConstants.KEYSTORE_PROPERTY);
+	final char[] keyStorePassword = System.getProperty(JSSEConstants.KEYSTORE_PASSWORD_PROPERTY, "").toCharArray();
+	final String keyStoreType = System.getProperty(JSSEConstants.KEYSTORE_TYPE_PROPERTY, "jks");
+	// The "alias" is the name of the key pair in our keystore. (default: "mykey")
+	final String alias = System.getProperty(JSSEConstants.KEYSTORE_ALIAS_PROPERTY, "mykey");
+	System.err.println("alias = " + alias);
+
+	final KeyStore keyStore;
+	
+	if (keyStoreFile != null) {
+	    keyStore = KeyStore.getInstance(keyStoreType);
+	    keyStore.load(new FileInputStream(keyStoreFile), keyStorePassword);
+	    
+	    this.ks = keyStore;
+	} else {
+	    keyStore = null;
+	}
+
+	// Get our key pair and our own DN (not the remote server's DN) from the keystore.
+	PrivateKey privateKey = (PrivateKey) keyStore.getKey(alias, keyStorePassword);
+	iaik.x509.X509Certificate certificate = new iaik.x509.X509Certificate(keyStore.getCertificate(alias).getEncoded());
+	PublicKey publicKey = certificate.getPublicKey();
+	Principal ourDN = certificate.getIssuerDN();
+
+	// . . . 
+
+	iaik.x509.X509Certificate serverCertificate = new iaik.x509.X509Certificate(keyStore.getCertificate(alias).getEncoded());
+  
+  serverCertificate.setIssuerDN(ourDN);
+	serverCertificate.setSubjectDN(serverDN);
+  serverCertificate.setSerialNumber(serialNumber);
+
+  GregorianCalendar date1 = new GregorianCalendar(2010, 1, 1);
+  serverCertificate.setValidNotBefore(date1.getTime());
+
+  GregorianCalendar date2 = new GregorianCalendar(2020, 1, 1);
+  serverCertificate.setValidNotAfter(date2.getTime());
+
+  serverCertificate.setPublicKey(publicKey);
+  serverCertificate.sign(AlgorithmID.sha256WithRSAEncryption, privateKey);
+
+	KeyStore serverKeyStore = KeyStore.getInstance(keyStoreType);;
+  serverKeyStore.load(null, null);
+  // serverKeyStore.setCertificateEntry("forgedCert", serverCertificate); 
+  char [] pass = "".toCharArray();
+  serverKeyStore.setKeyEntry("forgedCertKey", privateKey, pass, new Certificate[] { serverCertificate });
+	
+	final KeyManagerFactory keyManagerFactory =
+	    KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+	keyManagerFactory.init(serverKeyStore, pass);
+
+	m_sslContext = SSLContext.getInstance("SSL");
+	m_sslContext.init(keyManagerFactory.getKeyManagers(),
+			  new TrustManager[] { new TrustEveryone() },
+			  null);
+
+	m_clientSocketFactory = m_sslContext.getSocketFactory();
+	m_serverSocketFactory = m_sslContext.getServerSocketFactory();
+
+	/**/
     }
 
     public final ServerSocket createServerSocket(String localHost,
@@ -141,17 +210,17 @@ public final class MITMSSLSocketFactory implements MITMSocketFactory
      * chains are trusted or not ;-)
      *
      */
-    private static class TrustEveryone implements X509TrustManager
+    private static class TrustEveryone implements javax.net.ssl.X509TrustManager
     {
-	public void checkClientTrusted(X509Certificate[] chain,
+	public void checkClientTrusted(java.security.cert.X509Certificate[] chain,
 				       String authenticationType) {
 	}
 	
-	public void checkServerTrusted(X509Certificate[] chain,
+	public void checkServerTrusted(java.security.cert.X509Certificate[] chain,
 				       String authenticationType) {
 	}
 
-	public X509Certificate[] getAcceptedIssuers()
+	public java.security.cert.X509Certificate[] getAcceptedIssuers()
 	{
 	    return null;
 	}

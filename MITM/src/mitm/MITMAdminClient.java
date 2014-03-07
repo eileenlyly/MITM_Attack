@@ -1,15 +1,18 @@
 /**
- * CSE 490K project 2
+ * CS255 project 2
  */
 package mitm;
 
 import java.io.*;
 import java.net.*;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManager;
+
 public class MITMAdminClient
 {
     private Socket m_remoteSocket;
-    private String username;
     private String password;
     private String command;
     private String commonName = "";
@@ -27,8 +30,7 @@ public class MITMAdminClient
 	    "\n" +
 	    "\n Where options can include:" +
 	    "\n" +
-	    "\n   <-userName <type> >       " +
-	    "\n   <-userPassword <pass> >   " +
+	    "\n   <-password <pass> >   " +
 	    "\n   <-cmd <shudown|stats>" +
 	    "\n   [-remoteHost <host name/ip>]  Default is localhost" +
 	    "\n   [-remotePort <port>]          Default is 8002" +
@@ -38,6 +40,24 @@ public class MITMAdminClient
 	System.exit(1);
 	return null;
     }
+
+
+    private static class TrustEveryone implements javax.net.ssl.X509TrustManager
+    {
+	public void checkClientTrusted(java.security.cert.X509Certificate[] chain,
+				       String authenticationType) {
+	}
+
+	public void checkServerTrusted(java.security.cert.X509Certificate[] chain,
+				       String authenticationType) {
+	}
+
+	public java.security.cert.X509Certificate[] getAcceptedIssuers()
+	{
+	    return null;
+	}
+    }
+
 
     private MITMAdminClient( String [] args ) {
 	int remotePort = 8002;
@@ -53,9 +73,7 @@ public class MITMAdminClient
 		    remoteHost = args[++i];
 		} else if (args[i].equals("-remotePort")) {
 		    remotePort = Integer.parseInt(args[++i]);
-		} else if (args[i].equals("-userName")) {
-		    username = args[++i];
-		} else if (args[i].equals("-userPassword")) {
+		} else if (args[i].equals("-password")) {
 		    password = args[++i];
 		} else if (args[i].equals("-cmd")) {
 		    command = args[++i];
@@ -67,9 +85,15 @@ public class MITMAdminClient
 		}
 	    }
 
-	    // TODO upgrade this to an SSL connection
-	    m_remoteSocket = new Socket( remoteHost, remotePort );
-	    
+	    SSLContext sslContext = SSLContext.getInstance( "SSL" );
+
+	    sslContext.init(
+    		new javax.net.ssl.KeyManager[] {}
+    		, new TrustManager[] { new TrustEveryone() }
+    		, null
+    		);
+
+	    m_remoteSocket = (SSLSocket) sslContext.getSocketFactory().createSocket( remoteHost, remotePort );
 	}
 	catch (Exception e) {
 	    throw printUsage();
@@ -83,7 +107,6 @@ public class MITMAdminClient
 	    if( m_remoteSocket != null ) {
 		PrintWriter writer =
 		    new PrintWriter( m_remoteSocket.getOutputStream() );
-		writer.println("username:"+username);
 		writer.println("password:"+password);
 		writer.println("command:"+command);
 		writer.println("CN:"+commonName);

@@ -9,20 +9,22 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
-import java.security.cert.X509Certificate;
+import java.security.Principal;
 import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
-import java.math.BigInteger;
 
+import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 
 import iaik.asn1.ObjectID;
 import iaik.asn1.structures.Name;
+import iaik.x509.X509Certificate;
 
 
 /** 
@@ -55,6 +57,8 @@ public class HTTPSProxyEngine extends ProxyEngine
     private final Pattern m_httpsConnectPattern;
 
     private final ProxySSLEngine m_proxySSLEngine;
+
+    public int num_requests = 0;
     
     public HTTPSProxyEngine(MITMPlainSocketFactory plainSocketFactory,
 			    MITMSSLSocketFactory sslSocketFactory,
@@ -123,6 +127,7 @@ public class HTTPSProxyEngine extends ProxyEngine
 		// 'grep' for CONNECT message and extract the remote server/port
 
 		if (httpsConnectMatcher.find()) {//then we have a proxy CONNECT message!
+				num_requests++;
 		    // Discard any other plaintext data the client sends us:
 		    while (in.read(buffer, 0, in.available()) > 0) {
 		    }
@@ -139,7 +144,6 @@ public class HTTPSProxyEngine extends ProxyEngine
 		    m_tempRemoteHost = remoteHost;
 		    m_tempRemotePort = remotePort;
 
-		    javax.security.cert.X509Certificate java_cert = null;
 		    SSLSocket remoteSocket = null;
 		    try {
 			//Lookup the "common name" field of the certificate from the remote server:
@@ -152,25 +156,23 @@ public class HTTPSProxyEngine extends ProxyEngine
 			continue;
 		    }
 
-		    String serverCN = null;
-		    BigInteger serialno = null;
-		    // TODO: add in code to get the remote server's CN  and serial number from its cert.
-		    java_cert = (remoteSocket.getSession().getPeerCertificateChain())[0];
-		    serialno = java_cert.getSerialNumber();
-		    String remoteServerName = java_cert.getSubjectDN().getName();//It contains CN, OU, and a bunch of other things.
-		    Pattern p = Pattern.compile("CN=([^,]+), O=.*");
-		    final Matcher m = p.matcher(remoteServerName);
-		    if (m.find()) //we expect to find the pattern of course...
-		    	serverCN = m.group(1);
-		    else System.err.println("not finding patterns!");
-		    
+		    // TODO(cs255): get the remote server's Distinguished Name (DN) and serial number from its actual certificate,
+		    //   so that we can copy those values in the certificate that we forge.
+		    //   (Recall that we, as a MITM, obtain the server's actual certificate from our own session as a client
+		    //    to that server.)
+		    javax.security.cert.X509Certificate[] serverCertChain = remoteSocket.getSession().getPeerCertificateChain(); // should the last method be something else? -TD
+		    iaik.x509.X509Certificate serverCertificate = new iaik.x509.X509Certificate(serverCertChain[0].getEncoded()); // I think this works (Piazza says so) -TD
+		    Principal serverDN = serverCertificate.getSubjectDN();
+		    BigInteger serverSerialNumber = serverCertificate.getSerialNumber();
+
+
 		    //We've already opened the socket, so might as well keep using it:
 		    m_proxySSLEngine.setRemoteSocket(remoteSocket);
 
 		    //This is a CRUCIAL step:  we dynamically generate a new cert, based
-		    // on the remote server's CN, and return a reference to the internal
+		    // on the remote server's DN, and return a reference to the internal
 		    // server socket that will make use of it.
-		    ServerSocket localProxy = m_proxySSLEngine.createServerSocket(serverCN, serialno);
+		    ServerSocket localProxy = m_proxySSLEngine.createServerSocket(serverDN, serverSerialNumber);
 
 		    //Kick off a new thread to send/recv data to/from the remote server.
 		    // Remote server's response data is made available via an internal 
@@ -225,7 +227,7 @@ public class HTTPSProxyEngine extends ProxyEngine
 	response.append("HTTP/1.0 ").append(msg).append("\r\n");
 	response.append("Host: " + remoteHost + ":" +
 			remotePort + "\r\n");
-	response.append("Proxy-agent: CSE490K-MITMProxy/1.0\r\n");
+	response.append("Proxy-agent: CS255-MITMProxy/1.0\r\n");
 	response.append("\r\n");
 	out.write(response.toString().getBytes());
 	out.flush();
@@ -259,8 +261,8 @@ public class HTTPSProxyEngine extends ProxyEngine
 	    this.remoteSocket = s;
 	}
 
-	public final ServerSocket createServerSocket(String remoteServerCN, BigInteger serialno) throws IOException, java.security.GeneralSecurityException, Exception {
-	    MITMSSLSocketFactory ssf = new MITMSSLSocketFactory(remoteServerCN, serialno);
+	public final ServerSocket createServerSocket(Principal remoteServerDN, BigInteger serialNumber) throws IOException, java.security.GeneralSecurityException, Exception {
+	    MITMSSLSocketFactory ssf = new MITMSSLSocketFactory(remoteServerDN, serialNumber);
 	    // you may want to consider caching this result for better performance
 	    m_serverSocket = ssf.createServerSocket("localhost", 0, timeout);
 	    return m_serverSocket;
@@ -278,7 +280,7 @@ public class HTTPSProxyEngine extends ProxyEngine
 		try {
 		    final Socket localSocket = this.getServerSocket().accept();
 
-		     System.err.println("New proxy proxy connection to " +
+		     System.err.println("New proxy connection to " +
 		       m_tempRemoteHost + ":" + m_tempRemotePort);
 
 		     this.launchThreadPair(localSocket, remoteSocket,
