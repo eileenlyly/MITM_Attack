@@ -12,4 +12,4 @@ ConnectionDetails.java| Holds information of a TCP connection
 CopyStreamRunnable.java| Blindly copy data from an input stream to an output stream 
 MITMPlainSocketFactory.java |Create unencrypted sockets and handle the initial browser proxy CONNECT request 
 ProxyEngine.java |Abstract parent class of HTTPSProxyEngine 
-StreamThread.java | Copy data from an
+StreamThread.java | Copy data from an input stream to an output stream
